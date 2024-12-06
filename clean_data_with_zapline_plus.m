@@ -275,7 +275,6 @@ zaplineConfig.prominenceQuantile = prominenceQuantile;
 % initialize results in case no noise frequenc is found
 [pxx_clean_log resSigmaFinal resProportionRemoved resProportionRemovedNoise resProportionRemovedBelowNoise resProportionBelowLower...
     resProportionAboveUpper resRatioNoiseRaw resRatioNoiseClean resNremoveFinal resScores resNoisePeaks resFoundNoise] = deal([]);
-cleanData = data;
 
 %% Clean each frequency one after another
 
@@ -289,6 +288,8 @@ if ~isempty(flat_channels_idx)
     
     data(:,flat_channels_idx) = [];
 end
+
+cleanData = data;
 
 disp('Computing initial spectrum...')
 % compute spectrum with frequency resolution of winSizeCompleteSpectrum
@@ -308,9 +309,50 @@ if strcmp(noisefreqs,'line')
     
     lineonly = 1;
     % relative 50 Hz power
-    idx = (f>49.9 & f< 50.1) | (f >59.9 & f<60.1);
+
+    % BF_wider_linefrequency_search_range (Suddha Sourav):
+    % Previously line frequency was searched in the following ranges:
+    % (49.9 Hz < f < 50.1 Hz) OR (59.9 Hz < f < 60.1 Hz). The frequency range
+    % of 0.2 Hz is generally sufficient but still might miss line frequencies
+    % in some inopportune intervals, see:
+    % Schäfer et al. (2018). Non-Gaussian power grid
+    % frequency fluctuations characterized by Lévy-stable laws and superstatis-
+    % tics. Nature Energy, 3(2), 119-126. doi:
+    % https://doi.org/10.1038/s41560-017-0058-z
+    %
+    % This problem is more serious for EEG/MEG research in lower/middle-income
+    % countries, where the range might be wider, see:
+    % Gautam et al. (2020). Analyses of Indian Power System Frequency. In 2020
+    % IEEE POWERCON (pp. 1-6). IEEE. doi:
+    % https://doi.org/10.1109/POWERCON48463.2020.9230532
+    %
+    % Suggestion: increase the range to 2 Hz, i.e.
+    % (49 Hz < f < 51 Hz) OR (59 Hz < f < 60 Hz)
+
+    idx = (f > 49 & f < 50) | (f > 59 & f < 60);
     
-    noisefreqs_candidate = f(find(pxx_raw_log==max(pxx_raw_log(idx))));
+    % BF_noise_frequency_candidate_search (Suddha Sourav):
+    % Index in 2D, take all channels (i.e. columns) into account by
+    % getting a chunk of the spectra over all electrodes at the fre-
+    % quencies of interest.
+    spectraChunk_allChans = pxx_raw_log(idx,:);
+    
+    % Get the global maximum across all channels, calculated on the 
+    % flattened spectral data chunk.
+    [maxVal, n] = max(spectraChunk_allChans(:));
+    
+    % Find out which row and column (frequency index in the spectral data
+    % chunk, and channel number) the max value was in
+    [fIdx_max, chanIdx_max] = ind2sub(size(spectraChunk_allChans),n);
+    
+    % Find out the frequency: first, relate the spectral data chunk's
+    % indices to the actual frequency indices, then index based on this
+    % vector
+    f_spectraChunk_allChans = f(find(idx));
+    noisefreqs_candidate = f_spectraChunk_allChans(fIdx_max);
+    
+    % P.S. for multiple maximum values, the method anove will always return
+    % the first maximum value, thus one less potential bug
     
     fprintf('"noisefreqs" parameter was set to ''line'', found line noise candidate at %g Hz!\n',noisefreqs_candidate);
     
